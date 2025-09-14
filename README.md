@@ -1,6 +1,6 @@
 # Nginx and Node.js API Setup
 
-This project provides a step-by-step guide to set up an Nginx web server, a simple Node.js API, a reverse proxy, load balancing, caching, and rate limiting on a Linux system (Ubuntu/Debian).
+This project provides a step-by-step guide to set up an Nginx web server, a simple Node.js API, a reverse proxy, load balancing, caching, rate limiting, and SSL/TLS certificate configuration on a Linux system (Ubuntu/Debian).
 
 ## Table of Contents
 - [Prerequisites](#prerequisites)
@@ -9,6 +9,7 @@ This project provides a step-by-step guide to set up an Nginx web server, a simp
 - [Stage 3: Reverse Proxy Server](#stage-3-reverse-proxy-server)
 - [Stage 4: Nginx Load Balancing](#stage-4-nginx-load-balancing)
 - [Stage 5: Nginx Caching and Rate Limiting](#stage-5-nginx-caching-and-rate-limiting)
+- [Stage 6: Setting Up SSL/TLS with Let's Encrypt](#stage-6-setting-up-ssltls-with-lets-encrypt)
 - [Testing](#testing)
 - [Contributing](#contributing)
 
@@ -18,6 +19,8 @@ This project provides a step-by-step guide to set up an Nginx web server, a simp
 - `sudo` privileges
 - Basic knowledge of Linux commands, Nginx, and Node.js
 - Installed tools: `apt`, `nodejs`, `npm`
+- A registered domain name (for SSL/TLS, e.g., `test.kandeel.local` must resolve to your server’s IP)
+- Port 80 open for Let's Encrypt verification
 
 ## Stage 1: Installing and Configuring Nginx
 Install and configure Nginx to serve a static website.
@@ -68,7 +71,7 @@ Install and configure Nginx to serve a static website.
      ```bash
      sudo ln -s /etc/nginx/sites-available/mysite /etc/nginx/sites-enabled/
      ```
-   - Update `/etc/hosts` to map `mysite.local`:
+   - Update `/etc/hosts` to map `mysite.local` (for local testing):
      ```bash
      sudo vim /etc/hosts
      ```
@@ -159,7 +162,7 @@ Configure Nginx as a reverse proxy to forward requests to the Node.js API.
    }
    ```
 
-2. **Update Hosts File**:
+2. **Update Hosts File** (for local testing):
    ```bash
    sudo vim /etc/hosts
    ```
@@ -254,11 +257,79 @@ Add caching and rate limiting to optimize performance and control traffic.
    sudo systemctl reload nginx.service
    ```
 
+## Stage 6: Setting Up SSL/TLS with Let's Encrypt
+Secure your Nginx server with a free SSL/TLS certificate from Let's Encrypt using Certbot.
+
+1. **Install Certbot**:
+   ```bash
+   sudo apt update
+   sudo apt install -y certbot python3-certbot-nginx
+   ```
+
+2. **Obtain an SSL Certificate**:
+   - Run Certbot to automatically configure SSL for your domain (replace `test.kandeel.local` with your actual domain):
+     ```bash
+     sudo certbot --nginx -d test.kandeel.local
+     ```
+   - Follow the prompts to provide an email address and agree to the terms of service.
+   - Certbot will automatically update your Nginx configuration to use HTTPS (port 443) and redirect HTTP traffic to HTTPS.
+
+3. **Verify Nginx Configuration**:
+   - Certbot modifies the Nginx configuration file (e.g., `/etc/nginx/sites-available/test.kandeel.local`). The updated configuration will look like:
+     ```
+     server {
+         listen 80;
+         server_name test.kandeel.local;
+         return 301 https://$host$request_uri;  # Redirect HTTP to HTTPS
+     }
+     server {
+         listen 443 ssl;
+         server_name test.kandeel.local;
+         ssl_certificate /etc/letsencrypt/live/test.kandeel.local/fullchain.pem;
+         ssl_certificate_key /etc/letsencrypt/live/test.kandeel.local/privkey.pem;
+         include /etc/letsencrypt/options-ssl-nginx.conf;
+         ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+         location / {
+             proxy_pass http://api_backend;
+             limit_req zone=limit_z burst=5 nodelay;
+             proxy_cache demo_cache;
+             proxy_cache_valid 200 30s;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+         }
+         location /api/ {
+             proxy_pass http://127.0.0.1:3000;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+         }
+         location /api2/ {
+             proxy_pass http://127.0.0.1:3001;
+             proxy_set_header Host $host;
+             proxy_set_header X-Real-IP $remote_addr;
+         }
+     }
+     ```
+
+4. **Test and Reload Nginx**:
+   ```bash
+   sudo nginx -t
+   sudo systemctl reload nginx.service
+   ```
+
+5. **Automatic Certificate Renewal**:
+   - Let's Encrypt certificates are valid for 90 days. Certbot sets up a cron job or systemd timer to renew them automatically.
+   - Test the renewal process:
+     ```bash
+     sudo certbot renew --dry-run
+     ```
+
 ## Testing
-- Access the static site: `http://mysite.local`
-- Access the API: `http://test.kandeel.local/api`
+- Access the static site: `https://mysite.local` (after SSL setup)
+- Access the API: `https://test.kandeel.local/api`
 - Test load balancing by running multiple Node.js instances (e.g., on ports 3000 and 3002).
-- Verify caching and rate limiting by sending multiple requests to `http://test.kandeel.local`.
+- Verify caching and rate limiting by sending multiple requests to `https://test.kandeel.local`.
+- Verify HTTPS by checking the padlock in your browser and accessing `https://test.kandeel.local`.
 
 ## Contributing
 Contributions are welcome! Please follow these steps:
